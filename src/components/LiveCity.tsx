@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Cl } from "@stacks/transactions";
-import { AuthSlot } from "@/components/AuthSlot";
 import { NetworkBadge } from "@/components/NetworkBadge";
 import { Button } from "@/components/ui/button";
 import { isPurchasable, spaceAt, SPACES } from "@/game/board";
@@ -19,7 +18,7 @@ import {
   LIVE_JOIN_USTX,
   microToStx,
   nextUnlockAt,
-  STACKS_NETWORK,
+  publicError,
   TOKEN_SYMBOL,
 } from "@/lib/sitizen";
 import { loadCitySnapshot, loadDeed, loadDeeds, loadSeat, type CitySnapshot } from "@/lib/city-reads";
@@ -72,7 +71,7 @@ export function LiveCity() {
   }, []);
 
   useEffect(() => {
-    refresh(wallet?.address).catch((err: unknown) => setError(String(err)));
+    refresh(wallet?.address).catch((err: unknown) => setError(publicError(err)));
   }, [refresh, wallet?.address]);
 
   useEffect(() => {
@@ -96,7 +95,7 @@ export function LiveCity() {
       setTxid(id);
       await refresh(wallet?.address);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(publicError(err));
     } finally {
       setBusy(null);
     }
@@ -107,16 +106,19 @@ export function LiveCity() {
     try {
       setWallet(await connectWallet());
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(publicError(err));
     }
+  }
+
+  async function onDisconnect() {
+    await disconnectWallet();
+    setWallet(null);
+    setHuman(false);
+    setLastLanded(null);
   }
 
   async function onJoin() {
     if (!wallet) return;
-    if (STACKS_NETWORK === "mainnet") {
-      setError("Mainnet join is $50 of STX (TWAP), not a hardcoded amount.");
-      return;
-    }
     await run("join", async () => {
       const { txid: id } = await callCity({
         contract: CONTRACTS.city,
@@ -160,8 +162,8 @@ export function LiveCity() {
   async function onList() {
     if (!wallet) return;
     const stx = Number(saleStx);
-    if (!Number.isInteger(stx) || stx <= 0) {
-      setError("Sale price must be a whole STX amount.");
+    if (!Number.isInteger(stx) || stx <= 0 || stx > 1_000_000) {
+      setError("Sale price must be a whole STX amount between 1 and 1,000,000.");
       return;
     }
     const micro = BigInt(stx) * 1_000_000n;
@@ -192,22 +194,18 @@ export function LiveCity() {
           <div className="flex items-center gap-3">
             <NetworkBadge />
             <Link to="/litepaper" className="text-xs text-fg-muted hover:text-fg">
-              Litepaper
+              Rules
             </Link>
-            <Link to="/" className="text-xs text-fg-muted hover:text-fg">
-              Computer City
-            </Link>
-            <AuthSlot />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-5 py-8 sm:py-10">
-        <p className="text-[11px] tracking-[0.22em] text-fg-subtle uppercase">Live City · Stacks {STACKS_NETWORK}</p>
+        <p className="text-[11px] tracking-[0.22em] text-fg-subtle uppercase">Live City · Stacks testnet</p>
         <h1 className="mt-3 font-display text-4xl font-medium tracking-tight sm:text-5xl">{APP_NAME}</h1>
         <p className="mt-3 max-w-xl text-base text-fg-muted">
-          You sit. The city keeps. Join is {LIVE_JOIN_STX} STX on testnet. Deeds are {DEED_PREFIX}-XX. Token is {TOKEN_SYMBOL}.
-          No seed in this browser. Leather and Xverse sign on your device.
+          You sit. The city keeps. Sign in by connecting Leather or Xverse. Join is {LIVE_JOIN_STX} STX. Deeds are{" "}
+          {DEED_PREFIX}-XX. Token is {TOKEN_SYMBOL}. This browser never sees your 24 words.
         </p>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -217,39 +215,35 @@ export function LiveCity() {
                 className="rounded-full border border-border bg-bg-elevated px-3 py-1 font-mono text-xs text-fg"
                 href={explorerAddr(wallet.address)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 {shortAddr(wallet.address)}
               </a>
-              <Button variant="ghost" size="sm" onClick={() => disconnectWallet().then(() => setWallet(null))}>
+              <Button variant="ghost" size="sm" onClick={() => void onDisconnect()}>
                 Disconnect
               </Button>
             </>
           ) : (
-            <Button onClick={onConnect} disabled={Boolean(busy)}>
-              Connect Leather / Xverse
+            <Button onClick={() => void onConnect()} disabled={Boolean(busy)}>
+              Connect wallet to sign in
             </Button>
           )}
-          <Button
-            variant="go"
-            onClick={onJoin}
-            disabled={!wallet || !ready || human || STACKS_NETWORK === "mainnet" || Boolean(busy)}
-          >
+          <Button variant="go" onClick={() => void onJoin()} disabled={!wallet || !ready || human || Boolean(busy)}>
             {busy === "join" ? "Confirm in wallet…" : `Join · ${LIVE_JOIN_STX} STX`}
           </Button>
         </div>
 
         {!ready && (
           <p className="mt-4 max-w-xl text-sm text-warn">
-            Contract IDs are empty. Paste {`NEXT_PUBLIC_CITY_CONTRACT`} (and deed, token, treasury) in Vercel env or
-            `.env.local`. Never put a seed there.
+            Contracts are not wired yet. After you deploy on testnet, put the four ST… contract IDs in Vercel env (never
+            a seed). Until then you can still connect a wallet.
           </p>
         )}
         {error && <p className="mt-4 max-w-xl text-sm text-bad">{error}</p>}
         {txid && (
           <p className="mt-4 text-sm text-good">
             Posted.{" "}
-            <a className="underline" href={explorerTx(txid)} target="_blank" rel="noreferrer">
+            <a className="underline" href={explorerTx(txid)} target="_blank" rel="noopener noreferrer">
               Open in explorer
             </a>
           </p>
@@ -263,7 +257,7 @@ export function LiveCity() {
           <Fact k={`${TOKEN_SYMBOL} vault`} v={snap ? microToStx(snap.sitzVault) : "—"} />
           <Fact k="Epoch" v={snap ? `${snap.epoch}${snap.epochOpen ? " · open" : ""}` : "—"} />
           <Fact k="Loop" v={snap ? `${snap.loop} spaces` : "Founders Square 40"} />
-          <Fact k="Your seat" v={human ? "Human" : wallet ? "Not seated" : "Connect"} />
+          <Fact k="Your seat" v={human ? "Signed in · seated" : wallet ? "Signed in · not seated" : "Connect wallet"} />
         </dl>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -310,12 +304,12 @@ export function LiveCity() {
                   </p>
                 )}
                 <div className="mt-4 flex flex-col gap-2">
-                  <Button variant="secondary" onClick={onClaim} disabled={!wallet || !human || Boolean(busy)}>
+                  <Button variant="secondary" onClick={() => void onClaim()} disabled={!wallet || !human || Boolean(busy)}>
                     {busy === "claim" ? "Confirm in wallet…" : "Claim last-landed"}
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={onImprove}
+                    onClick={() => void onImprove()}
                     disabled={!wallet || !mine || !deed || deed.houses >= 5 || selectedSpace.kind !== "property" || Boolean(busy)}
                   >
                     {busy === "improve"
@@ -328,15 +322,16 @@ export function LiveCity() {
                       className="mt-1 h-10 w-full rounded-[var(--radius-sm)] border border-border bg-bg px-3 text-sm text-fg"
                       inputMode="numeric"
                       value={saleStx}
-                      onChange={(e) => setSaleStx(e.target.value.replace(/[^\d]/g, ""))}
+                      onChange={(e) => setSaleStx(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
                     />
                   </label>
-                  <Button variant="secondary" onClick={onList} disabled={!wallet || !human || Boolean(busy)}>
+                  <Button variant="secondary" onClick={() => void onList()} disabled={!wallet || !human || Boolean(busy)}>
                     {busy === "list" ? "Confirm in wallet…" : "List · 2.5% STX fee"}
                   </Button>
                 </div>
                 <p className="mt-3 text-[11px] text-fg-subtle">
-                  Post-conditions are deny-mode and exact STX amounts. Civic tax is STX. {TOKEN_SYMBOL} never pays rent.
+                  Sign-in is the wallet. Join sends exactly {LIVE_JOIN_STX} STX (deny-mode post-condition). Civic tax is
+                  STX. {TOKEN_SYMBOL} never pays rent.
                 </p>
               </>
             )}

@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { AuthSlot } from "@/components/AuthSlot";
 import { NetworkBadge } from "@/components/NetworkBadge";
 import { Button } from "@/components/ui/button";
 import { CIRCUIT_SPACES, GROUP_LABEL, districtSpaces } from "@/game/board";
@@ -87,13 +86,9 @@ export function Litepaper() {
           </Link>
           <div className="flex items-center gap-3">
             <NetworkBadge />
-            <Link to="/live" className="text-xs text-fg-muted hover:text-fg">
-              Live City
-            </Link>
             <Link to="/" className="text-xs text-fg-muted hover:text-fg">
-              Play
+              City
             </Link>
-            <AuthSlot />
           </div>
         </div>
       </header>

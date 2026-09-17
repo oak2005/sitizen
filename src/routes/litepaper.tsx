@@ -9,7 +9,7 @@ export const Route = createFileRoute("/litepaper")({
       {
         name: "description",
         content:
-          "Sitizen litepaper: what the city means, how Computer City plays now, how Live City will run, land NFTs, houses on the deed, and computers that never hold the clock.",
+          "Sitizen litepaper: Live City on Stacks testnet. Land is the NFT. Houses ride on the deed. Join is 50 STX.",
       },
     ],
   }),

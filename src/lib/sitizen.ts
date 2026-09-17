@@ -11,13 +11,19 @@ function readEnv(key: string): string {
   return String(env[key] ?? env[viteKey] ?? "").trim();
 }
 
-function readNetwork(): "testnet" | "mainnet" {
-  const raw = readEnv("NEXT_PUBLIC_STACKS_NETWORK").toLowerCase();
-  return raw === "mainnet" ? "mainnet" : "testnet";
+/** This build is Live City on Stacks testnet only. */
+export const STACKS_NETWORK = "testnet" as const;
+
+const CONTRACT_ID = /^ST[0-9A-Z]{20,}\.[A-Za-z][A-Za-z0-9\-_]*$/;
+const STX_ADDR = /^ST[0-9A-Z]{20,}$/;
+
+export function isTestnetAddress(addr: string): boolean {
+  return STX_ADDR.test(addr.trim());
 }
 
-/** Live City host. Computer City does not use a chain. */
-export const STACKS_NETWORK = readNetwork();
+export function isTestnetContract(id: string): boolean {
+  return CONTRACT_ID.test(id.trim());
+}
 
 export const CONTRACTS = {
   city: readEnv("NEXT_PUBLIC_CITY_CONTRACT"),
@@ -28,12 +34,17 @@ export const CONTRACTS = {
 };
 
 export function contractsReady(): boolean {
-  return Boolean(CONTRACTS.city && CONTRACTS.deed && CONTRACTS.token && CONTRACTS.treasury);
+  return (
+    isTestnetContract(CONTRACTS.city) &&
+    isTestnetContract(CONTRACTS.deed) &&
+    isTestnetContract(CONTRACTS.token) &&
+    isTestnetContract(CONTRACTS.treasury)
+  );
 }
 
 export function splitContract(id: string): { address: string; name: string } | null {
+  if (!isTestnetContract(id)) return null;
   const i = id.lastIndexOf(".");
-  if (i <= 0 || i === id.length - 1) return null;
   return { address: id.slice(0, i), name: id.slice(i + 1) };
 }
 
@@ -43,17 +54,17 @@ export function deedId(spaceId: number): string {
 }
 
 export function hiroApi(): string {
-  return STACKS_NETWORK === "mainnet" ? "https://api.mainnet.hiro.so" : "https://api.testnet.hiro.so";
+  return "https://api.testnet.hiro.so";
 }
 
 export function explorerTx(txid: string): string {
-  const chain = STACKS_NETWORK === "mainnet" ? "mainnet" : "testnet";
-  return `https://explorer.hiro.so/txid/${txid}?chain=${chain}`;
+  const id = txid.replace(/[^0-9a-fx]/gi, "");
+  return `https://explorer.hiro.so/txid/${id}?chain=testnet`;
 }
 
 export function explorerAddr(addr: string): string {
-  const chain = STACKS_NETWORK === "mainnet" ? "mainnet" : "testnet";
-  return `https://explorer.hiro.so/address/${addr}?chain=${chain}`;
+  if (!isTestnetAddress(addr) && !isTestnetContract(addr)) return "https://explorer.hiro.so/?chain=testnet";
+  return `https://explorer.hiro.so/address/${addr}?chain=testnet`;
 }
 
 export function nextUnlockAt(humans: number): number | null {
@@ -67,4 +78,9 @@ export function microToStx(u: bigint | number): string {
   const n = typeof u === "bigint" ? Number(u) / 1_000_000 : u / 1_000_000;
   if (!Number.isFinite(n)) return "0";
   return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+export function publicError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  return raw.replace(/\b(mnemonic|private key|secret|seed phrase|24 words)\b/gi, "[redacted]").slice(0, 240);
 }

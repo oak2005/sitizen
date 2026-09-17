@@ -1,5 +1,18 @@
 import type { ClarityValue, ContractIdString, PostCondition } from "@stacks/transactions";
-import { STACKS_NETWORK } from "./sitizen";
+import { isTestnetAddress, isTestnetContract, STACKS_NETWORK } from "./sitizen";
+
+const CITY_FNS = new Set([
+  "join",
+  "claim",
+  "pay-listing-fee",
+  "commit-intent",
+  "land",
+  "open-epoch",
+  "close-epoch",
+  "settle",
+  "open-district",
+]);
+const DEED_FNS = new Set(["improve"]);
 
 export type WalletSession = {
   address: string;
@@ -18,11 +31,8 @@ function pickStxAddress(payload: unknown): string | null {
   for (const item of bags) {
     if (!item || typeof item !== "object") continue;
     const row = item as { address?: string; symbol?: string; type?: string };
-    const addr = String(row.address ?? "");
-    if (!addr) continue;
-    if (row.symbol === "STX" || row.type === "stacks" || addr.startsWith("ST") || addr.startsWith("SP")) {
-      return addr;
-    }
+    const addr = String(row.address ?? "").trim();
+    if (isTestnetAddress(addr)) return addr;
   }
   return null;
 }
@@ -34,21 +44,7 @@ export async function connectWallet(): Promise<WalletSession> {
   if (fromResult) return { address: fromResult };
   const stored = pickStxAddress(getLocalStorage());
   if (stored) return { address: stored };
-  throw new Error("Leather or Xverse did not return a Stacks address.");
-}
-
-export function restoreWallet(): WalletSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const stored = (window as unknown as { __sitizen?: WalletSession }).__sitizen;
-    const raw = window.localStorage.getItem("blockstack-session") ?? window.localStorage.getItem("stacks-session");
-    void stored;
-    void raw;
-  } catch {
-    /* ignore */
-  }
-  return null;
+  throw new Error("No testnet Stacks address. In Leather, switch the network to Testnet, then connect again.");
 }
 
 export async function restoreWalletAsync(): Promise<WalletSession | null> {
@@ -75,6 +71,17 @@ export async function callCity(opts: {
   postConditions?: PostCondition[];
   address: string;
 }): Promise<{ txid: string }> {
+  if (!isTestnetContract(opts.contract)) {
+    throw new Error("Contract ID is not a Stacks testnet contract.");
+  }
+  if (!isTestnetAddress(opts.address)) {
+    throw new Error("Wallet is not a testnet address.");
+  }
+  const name = opts.contract.split(".")[1] ?? "";
+  const allowed = name === "sz-deed" ? DEED_FNS : CITY_FNS;
+  if (!allowed.has(opts.functionName)) {
+    throw new Error("That function is not callable from this page.");
+  }
   const { request } = await import("@stacks/connect");
   const result = await request("stx_callContract", {
     contract: opts.contract as ContractIdString,
@@ -90,6 +97,12 @@ export async function callCity(opts: {
 }
 
 export function stxSendEq(address: string, amount: bigint): PostCondition {
+  if (!isTestnetAddress(address)) {
+    throw new Error("Post-condition address must be testnet.");
+  }
+  if (amount <= 0n) {
+    throw new Error("Post-condition amount must be positive.");
+  }
   return {
     type: "stx-postcondition",
     address,

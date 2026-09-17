@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#12110f" },
       {
         name: "description",
-        content: "Sitizen — a persistent property city. Computer City, Live City, Table Circuit. Land is the NFT. Houses ride on the deed.",
+        content: "Sitizen — a persistent property city on Stacks testnet. Connect a wallet to sit. Land is the NFT. Houses ride on the deed.",
       },
     ],
     links: [
