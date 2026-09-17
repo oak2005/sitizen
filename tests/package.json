@@ -1,0 +1,17 @@
+{
+  "name": "sitizen-contract-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@stacks/clarinet-sdk": "^3.24.0",
+    "@stacks/transactions": "7.2.0",
+    "vitest": "4.1.8",
+    "vitest-environment-clarinet": "3.0.0"
+  },
+  "dependencies": {
+    "@stacks/clarinet-sdk-wasm": "^3.24.0"
+  }
+}

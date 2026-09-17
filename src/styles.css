@@ -1,0 +1,181 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,650&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif;
+  --font-sans: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-bg: #12110f;
+  --color-bg-elevated: #1c1916;
+  --color-bg-subtle: #24211c;
+  --color-felt: #1a3328;
+  --color-felt-deep: #14261e;
+  --color-rail: #3a2a1c;
+  --color-tile: #efe6d4;
+  --color-tile-ink: #1c1916;
+  --color-tile-muted: #6b6256;
+  --color-tile-line: #d4c7b0;
+  --color-fg: #f3ead8;
+  --color-fg-muted: #b7aa98;
+  --color-fg-subtle: #8a7f70;
+  --color-accent: #e8dfd0;
+  --color-accent-fg: #141210;
+  --color-border: color-mix(in oklab, var(--color-fg) 12%, transparent);
+  --color-border-strong: color-mix(in oklab, var(--color-fg) 22%, transparent);
+  --color-good: #8fbf9a;
+  --color-bad: #d9897a;
+  --color-warn: #d4b483;
+
+  --color-group-brown: #6b3f2a;
+  --color-group-sky: #7fa9b8;
+  --color-group-rose: #b88193;
+  --color-group-clay: #c56e45;
+  --color-group-brick: #b24a40;
+  --color-group-sand: #9a8b52;
+  --color-group-pine: #3d6b4f;
+  --color-group-navy: #2c3d6b;
+  --color-group-amber: #c4a35a;
+  --color-group-iris: #7a6ea8;
+  --color-group-frost: #8fb7c4;
+  --color-group-plum: #7a3d5c;
+  --color-group-moss: #5a7a4a;
+  --color-group-transit: #3f3d39;
+  --color-group-utility: #5c574e;
+
+  --color-token-ivory: #f3ead8;
+  --color-token-rust: #b24a40;
+  --color-token-steel: #6a8494;
+  --color-token-pine: #3d6b4f;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --text-xs: clamp(0.75rem, 0.7rem + 0.2vw, 0.8125rem);
+  --text-sm: clamp(0.875rem, 0.82rem + 0.25vw, 0.9375rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.5vw, 1.25rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  --text-2xl: clamp(2rem, 1.4rem + 2vw, 3rem);
+  --text-3xl: clamp(2.5rem, 1.6rem + 3vw, 4rem);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100dvh;
+    overflow-x: clip;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.gc-sky {
+  background-image:
+    linear-gradient(180deg, rgb(18 17 15 / 0.35) 0%, rgb(18 17 15 / 0.72) 42%, var(--color-bg) 100%),
+    url("/art/skyline.jpg");
+  background-size: cover;
+  background-position: center top;
+}
+
+.gc-wood {
+  background-color: var(--color-rail);
+  background-image: url("/art/wood.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.gc-table {
+  --table-wash: color-mix(in oklab, var(--color-felt) 40%, transparent);
+}
+
+.gc-table[data-square="amber"] {
+  --table-wash: color-mix(in oklab, var(--color-group-amber) 38%, transparent);
+}
+.gc-table[data-square="iris"] {
+  --table-wash: color-mix(in oklab, var(--color-group-iris) 38%, transparent);
+}
+.gc-table[data-square="frost"] {
+  --table-wash: color-mix(in oklab, var(--color-group-frost) 40%, transparent);
+}
+.gc-table[data-square="plum"] {
+  --table-wash: color-mix(in oklab, var(--color-group-plum) 36%, transparent);
+}
+.gc-table[data-square="moss"] {
+  --table-wash: color-mix(in oklab, var(--color-group-moss) 36%, transparent);
+}
+.gc-table[data-square="clay"] {
+  --table-wash: color-mix(in oklab, var(--color-group-clay) 34%, transparent);
+}
+.gc-table[data-square="navy"] {
+  --table-wash: color-mix(in oklab, var(--color-group-navy) 34%, transparent);
+}
+.gc-table[data-square="brick"] {
+  --table-wash: color-mix(in oklab, var(--color-group-brick) 34%, transparent);
+}
+
+.gc-table[data-theme="slate"] {
+  --table-wash: color-mix(in oklab, var(--color-fg-subtle) 42%, transparent);
+}
+.gc-table[data-theme="dusk"] {
+  --table-wash: color-mix(in oklab, var(--color-group-navy) 48%, transparent);
+}
+.gc-table[data-theme="brass"] {
+  --table-wash: color-mix(in oklab, var(--color-group-amber) 52%, transparent);
+}
+
+.gc-felt {
+  background-color: var(--color-felt-deep);
+  background-image:
+    linear-gradient(180deg, var(--table-wash, rgb(26 51 40 / 0.18)), rgb(20 38 30 / 0.62)),
+    url("/art/felt.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+@media (min-width: 1024px) {
+  .gc-tilt {
+    transform: perspective(1600px) rotateX(12deg);
+    transform-origin: center 80%;
+  }
+}

@@ -1,0 +1,11 @@
+# Copy to settings/Testnet.toml on your machine. NEVER commit Testnet.toml.
+# Paste the deployer 24 words locally. Never send them to Grok, GitHub, or Vercel git.
+
+[network]
+name = "testnet"
+stacks_node_rpc_address = "https://api.testnet.hiro.so"
+deployment_fee_rate = 10
+
+[accounts.deployer]
+mnemonic = "<PASTE 24 WORDS LOCALLY — NEVER COMMIT Testnet.toml>"
+derivation = "m/44'/5757'/0'/0/0"

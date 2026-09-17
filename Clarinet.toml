@@ -1,0 +1,33 @@
+[project]
+name = "sitizen"
+description = "Sitizen Live City — Stacks testnet first, mainnet later"
+authors = []
+telemetry = false
+cache_dir = "./.cache"
+
+[repl.analysis]
+passes = ["check_checker"]
+check_checker = { trusted_sender = false, trusted_caller = false, callee_filter = false }
+
+[contracts.stx-treasury]
+path = "contracts/stx-treasury.clar"
+clarity_version = 6
+epoch = "latest"
+
+[contracts.sz-deed]
+path = "contracts/sz-deed.clar"
+clarity_version = 6
+epoch = "latest"
+
+[contracts.circuit-token]
+path = "contracts/circuit-token.clar"
+clarity_version = 6
+epoch = "latest"
+
+[contracts.sitizen-city]
+path = "contracts/sitizen-city.clar"
+clarity_version = 6
+epoch = "latest"
+
+
+
