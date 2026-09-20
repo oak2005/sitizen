@@ -79,6 +79,20 @@
     font-family: var(--font-sans);
   }
 
+  [data-felt="slate"] {
+    --color-bg: var(--color-felt-deep);
+    --color-bg-elevated: var(--color-felt);
+  }
+
+  [data-felt="dusk"] {
+    --color-bg: color-mix(in oklab, var(--color-group-navy) 40%, var(--color-bg));
+    --color-bg-elevated: color-mix(in oklab, var(--color-group-navy) 28%, var(--color-bg-elevated));
+  }
+
+  [data-felt="brass"] {
+    --color-accent: var(--color-group-amber);
+  }
+
   h1,
   h2,
   h3 {

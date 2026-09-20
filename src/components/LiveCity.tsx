@@ -6,8 +6,9 @@ import { Cl } from "@stacks/transactions";
 import { NetworkBadge } from "@/components/NetworkBadge";
 import { Button } from "@/components/ui/button";
 import { isPurchasable, spaceAt, SPACES } from "@/game/board";
-import { LIVE_JOIN_STX } from "@/game/epoch/types";
+import { LIVE_JOIN_STX, BAIL_MARKS, COSMETIC_SKINS, COSMETIC_THEMES, MARKS_PER_GO } from "@/game/epoch/types";
 import { liveRentStx } from "@/lib/live-rent";
+import { emptyMarks, grantGoMarks, loadMarks, spendBail, unlockCosmetic, wrappedGo, type LiveMarks } from "@/lib/live-marks";
 import {
   APP_NAME,
   CONTRACTS,
@@ -63,6 +64,7 @@ export function LiveCity() {
   const [faucetAmt, setFaucetAmt] = useState("100");
   const [sendAmt, setSendAmt] = useState("20");
   const [sendTo, setSendTo] = useState("");
+  const [mk, setMk] = useState<LiveMarks>(emptyMarks());
 
   const refresh = useCallback(async (address?: string) => {
     if (!ready) return;
@@ -77,6 +79,9 @@ export function LiveCity() {
       setLien(seat.lien);
       setJailed(seat.jailed);
       setSitzBal(await loadSitzBalance(address));
+      setMk(loadMarks(address));
+    } else {
+      setMk(emptyMarks());
     }
   }, [ready]);
 
@@ -108,7 +113,7 @@ export function LiveCity() {
     return SPACES.filter((s) => s.id < loop && isPurchasable(s));
   }, [snap?.loop]);
 
-  async function run(label: string, fn: () => Promise<string>) {
+  async function run(label: string, fn: () => Promise<string>): Promise<boolean> {
     setBusy(label);
     setError(null);
     setTxid(null);
@@ -116,8 +121,10 @@ export function LiveCity() {
       const id = await fn();
       setTxid(id);
       await refresh(wallet?.address);
+      return true;
     } catch (err) {
       setError(publicError(err));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -140,6 +147,7 @@ export function LiveCity() {
     setLien(0n);
     setJailed(false);
     setSitzBal(0n);
+    setMk(emptyMarks());
   }
 
   async function callFn(
@@ -149,8 +157,8 @@ export function LiveCity() {
     postConditions: Parameters<typeof callCity>[0]["postConditions"] = [],
     contract = CONTRACTS.city,
   ) {
-    if (!wallet) return;
-    await run(label, async () => {
+    if (!wallet) return false;
+    return run(label, async () => {
       const { txid: id } = await callCity({
         contract: functionName === "improve" ? CONTRACTS.deed : contract,
         functionName,
@@ -201,17 +209,39 @@ export function LiveCity() {
   }
 
   async function onLand() {
-    if (!snap) return;
-    const dest = roll?.dest ?? selected ?? 0;
+    if (!snap || !wallet || !roll) return;
+    const dest = roll.dest;
     if (!Number.isInteger(dest) || dest < 0 || dest >= snap.loop) {
       setError("Roll first, then land on that space.");
       return;
     }
-    await callFn("land", "land", [Cl.uint(dest)]);
+    const from = lastLanded?.space ?? 0;
+    const passedGo = wrappedGo(from, roll.a + roll.b, snap.loop);
+    const ok = await callFn("land", "land", [Cl.uint(dest)]);
+    if (!ok) return;
     if (ready) {
       const city = await loadCitySnapshot();
       setLandedEpoch(city.epoch);
     }
+    if (passedGo) {
+      const next = grantGoMarks(loadMarks(wallet.address));
+      setMk(next);
+    }
+  }
+
+  function onBail() {
+    if (!wallet) return;
+    const result = spendBail(loadMarks(wallet.address));
+    setMk(result.next);
+    setError(result.ok ? null : result.note);
+    if (result.ok) setTxid(null);
+  }
+
+  function onCosmetic(kind: "skin" | "theme", id: string) {
+    if (!wallet) return;
+    const result = unlockCosmetic(loadMarks(wallet.address), kind, id);
+    setMk(result.next);
+    setError(result.ok ? null : result.note);
   }
 
   async function onClaim() {
@@ -328,7 +358,7 @@ export function LiveCity() {
   const vaultReady = Boolean(snap && snap.sitzVault >= 10_000_000n);
 
   return (
-    <div className="min-h-dvh bg-bg text-fg">
+    <div className="min-h-dvh bg-bg text-fg" data-felt={mk.theme || undefined}>
       <header className="sticky top-0 z-20 border-b border-border bg-bg/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-3">
           <Link to="/" className="font-display text-base font-medium tracking-tight">
@@ -400,6 +430,7 @@ export function LiveCity() {
           <Fact k={`${TOKEN_SYMBOL} wallet`} v={wallet ? microToStx(sitzBal) : "—"} />
           <Fact k="Epoch" v={snap ? `${snap.epoch}${snap.epochOpen ? " · open" : snap.epoch ? " · closed" : " · none"}` : "—"} />
           <Fact k="Your seat" v={human ? (jailed ? "Seated · lien" : "Seated") : wallet ? "Not seated" : "Connect"} />
+          <Fact k="Marks" v={wallet ? `${mk.marks} · +${mk.minted}/−${mk.burned}` : "—"} />
           <Fact k="Last landed" v={lastLanded ? `${deedId(lastLanded.space)} · ep ${lastLanded.epoch}` : "—"} />
         </dl>
         {lien > 0n && (
@@ -542,6 +573,60 @@ export function LiveCity() {
           </Button>
         </section>
 
+        <section className="mt-8 rounded-[var(--radius-md)] border border-border bg-bg-elevated p-4 sm:p-5">
+          <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Marks · standing</p>
+          <p className="mt-2 max-w-2xl text-sm text-fg-muted">
+            {MARKS_PER_GO} Marks when you wrap past GO. They never pay rent and never change house cost. This table’s
+            join is {LIVE_JOIN_STX} STX on-chain — Marks cannot cut it. Cosmetics are local to this browser + wallet.
+            A bail bond is standing only; an on-chain lien still needs STX amnesty.
+          </p>
+          <p className="mt-3 text-sm text-fg">
+            {mk.marks} Marks{mk.bondReady ? " · bail prepaid" : ""}
+          </p>
+          <Button
+            className="mt-3"
+            variant="secondary"
+            onClick={onBail}
+            disabled={!wallet || mk.marks < BAIL_MARKS || mk.bondReady}
+          >
+            Bail bond · {BAIL_MARKS} Mk
+          </Button>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Pawn skins</p>
+              <div className="mt-2 flex flex-col gap-2">
+                {COSMETIC_SKINS.map((item) => (
+                  <Button
+                    key={item.id}
+                    size="sm"
+                    variant={mk.skin === item.id ? "primary" : "secondary"}
+                    onClick={() => onCosmetic("skin", item.id)}
+                    disabled={!wallet || (!mk.skins.includes(item.id) && mk.marks < item.cost)}
+                  >
+                    {mk.skins.includes(item.id) ? `Wear ${item.label}` : `${item.label} · ${item.cost} Mk`}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Board themes</p>
+              <div className="mt-2 flex flex-col gap-2">
+                {COSMETIC_THEMES.map((item) => (
+                  <Button
+                    key={item.id}
+                    size="sm"
+                    variant={mk.theme === item.id ? "primary" : "secondary"}
+                    onClick={() => onCosmetic("theme", item.id)}
+                    disabled={!wallet || (!mk.themes.includes(item.id) && mk.marks < item.cost)}
+                  >
+                    {mk.themes.includes(item.id) ? `Use ${item.label}` : `${item.label} · ${item.cost} Mk`}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem]">
           <section>
             <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Founders Square</p>
@@ -558,7 +643,7 @@ export function LiveCity() {
                     onClick={() => setSelected(space.id)}
                     className={`rounded-[var(--radius-md)] border px-3 py-2 text-left ${
                       active ? "border-fg/50 bg-bg-subtle" : "border-border bg-bg-elevated"
-                    }`}
+                    } ${here && mk.skin === "gilt" ? "ring-1 ring-token-ivory" : ""} ${here && mk.skin === "onyx" ? "ring-1 ring-fg-subtle" : ""} ${here && mk.skin === "jade" ? "ring-1 ring-good" : ""}`}
                   >
                     <span className="block font-mono text-[11px] text-fg-subtle">
                       {label}
