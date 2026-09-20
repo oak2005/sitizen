@@ -56,7 +56,12 @@
 (define-private (only-city)
   (let ((city (var-get city-contract)))
     (asserts! (is-some city) ERR-NO-CITY)
-    (asserts! (is-eq tx-sender (unwrap! city ERR-NO-CITY)) ERR-NOT-CITY)
+    (asserts! (or
+        (is-eq tx-sender (unwrap! city ERR-NO-CITY))
+        (is-eq contract-caller (unwrap! city ERR-NO-CITY))
+      )
+      ERR-NOT-CITY
+    )
     (ok true)
   )
 )

@@ -14,19 +14,24 @@ import {
   contractsReady,
   deedId,
   DEED_PREFIX,
+  deployerAddress,
   explorerAddr,
   explorerTx,
+  isTestnetAddress,
   LIVE_JOIN_USTX,
   microToStx,
   nextUnlockAt,
   publicError,
+  sitzAsset,
+  sitzToMicro,
   TOKEN_SYMBOL,
 } from "@/lib/sitizen";
-import { loadCitySnapshot, loadDeed, loadDeeds, loadSeat, type CitySnapshot } from "@/lib/city-reads";
+import { loadCitySnapshot, loadDeed, loadDeeds, loadSeat, loadSitzBalance, type CitySnapshot } from "@/lib/city-reads";
 import {
   callCity,
   connectWallet,
   disconnectWallet,
+  ftSendEq,
   restoreWalletAsync,
   stxSendEq,
   type WalletSession,
@@ -54,6 +59,10 @@ export function LiveCity() {
   const [committedEpoch, setCommittedEpoch] = useState<number | null>(null);
   const [landedEpoch, setLandedEpoch] = useState<number | null>(null);
   const [roll, setRoll] = useState<Roll | null>(null);
+  const [sitzBal, setSitzBal] = useState(0n);
+  const [faucetAmt, setFaucetAmt] = useState("100");
+  const [sendAmt, setSendAmt] = useState("20");
+  const [sendTo, setSendTo] = useState("");
 
   const refresh = useCallback(async (address?: string) => {
     if (!ready) return;
@@ -67,6 +76,7 @@ export function LiveCity() {
       setLastLanded(seat.lastLanded);
       setLien(seat.lien);
       setJailed(seat.jailed);
+      setSitzBal(await loadSitzBalance(address));
     }
   }, [ready]);
 
@@ -129,13 +139,20 @@ export function LiveCity() {
     setLastLanded(null);
     setLien(0n);
     setJailed(false);
+    setSitzBal(0n);
   }
 
-  async function callFn(label: string, functionName: string, functionArgs: Parameters<typeof callCity>[0]["functionArgs"], postConditions: Parameters<typeof callCity>[0]["postConditions"] = []) {
+  async function callFn(
+    label: string,
+    functionName: string,
+    functionArgs: Parameters<typeof callCity>[0]["functionArgs"],
+    postConditions: Parameters<typeof callCity>[0]["postConditions"] = [],
+    contract = CONTRACTS.city,
+  ) {
     if (!wallet) return;
     await run(label, async () => {
       const { txid: id } = await callCity({
-        contract: functionName === "improve" ? CONTRACTS.deed : CONTRACTS.city,
+        contract: functionName === "improve" ? CONTRACTS.deed : contract,
         functionName,
         functionArgs,
         address: wallet.address,
@@ -242,6 +259,45 @@ export function LiveCity() {
     await callFn("district", "open-district", [Cl.uint(snap.districts + 1)]);
   }
 
+  async function onGenesis() {
+    await callFn("genesis", "genesis", [], [], CONTRACTS.token);
+  }
+
+  async function onFaucet() {
+    if (!wallet) return;
+    const n = Number(faucetAmt);
+    if (!Number.isInteger(n) || n <= 0 || n > 10_000) {
+      setError("Faucet 1–10,000 SITZ.");
+      return;
+    }
+    await callFn("faucet", "faucet", [Cl.principal(wallet.address), Cl.uint(sitzToMicro(n))], [], CONTRACTS.token);
+  }
+
+  async function onSendSitz() {
+    if (!wallet) return;
+    const n = Number(sendAmt);
+    if (!Number.isInteger(n) || n <= 0 || n > 1_000_000) {
+      setError("Send a whole SITZ amount between 1 and 1,000,000.");
+      return;
+    }
+    if (!isTestnetAddress(sendTo)) {
+      setError("Recipient must be a testnet ST… address.");
+      return;
+    }
+    const micro = sitzToMicro(n);
+    await callFn(
+      "sitz",
+      "transfer",
+      [Cl.uint(micro), Cl.principal(wallet.address), Cl.principal(sendTo.trim()), Cl.none()],
+      [ftSendEq(wallet.address, micro, sitzAsset())],
+      CONTRACTS.token,
+    );
+  }
+
+  async function onDrip() {
+    await callFn("drip", "drip-sitz", []);
+  }
+
   const unlock = snap ? nextUnlockAt(snap.humans) : 8;
   const selectedSpace = selected != null ? spaceAt(selected) : null;
   const mine = Boolean(wallet && deed?.owner === wallet.address);
@@ -268,6 +324,8 @@ export function LiveCity() {
         })
       : 0;
   const mins = snap ? Math.max(1, Math.round(snap.epochLength / 60)) : 10;
+  const isDeployer = Boolean(wallet && deployerAddress() && wallet.address === deployerAddress());
+  const vaultReady = Boolean(snap && snap.sitzVault >= 10_000_000n);
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
@@ -339,6 +397,7 @@ export function LiveCity() {
           <Fact k="STX ops" v={snap ? `${microToStx(snap.opsStx)} STX` : "—"} />
           <Fact k="STX community" v={snap ? `${microToStx(snap.communityStx)} STX` : "—"} />
           <Fact k={`${TOKEN_SYMBOL} vault`} v={snap ? microToStx(snap.sitzVault) : "—"} />
+          <Fact k={`${TOKEN_SYMBOL} wallet`} v={wallet ? microToStx(sitzBal) : "—"} />
           <Fact k="Epoch" v={snap ? `${snap.epoch}${snap.epochOpen ? " · open" : snap.epoch ? " · closed" : " · none"}` : "—"} />
           <Fact k="Your seat" v={human ? (jailed ? "Seated · lien" : "Seated") : wallet ? "Not seated" : "Connect"} />
           <Fact k="Last landed" v={lastLanded ? `${deedId(lastLanded.space)} · ep ${lastLanded.epoch}` : "—"} />
@@ -407,6 +466,80 @@ export function LiveCity() {
               {busy === "district" ? "Confirm in wallet…" : `Open district ${nextDistrict} (4 lots)`}
             </Button>
           )}
+        </section>
+
+        <section className="mt-8 rounded-[var(--radius-md)] border border-border bg-bg-elevated p-4 sm:p-5">
+          <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">{TOKEN_SYMBOL} · token tax</p>
+          <p className="mt-2 max-w-2xl text-sm text-fg-muted">
+            Civic tax is STX. Token tax is {TOKEN_SYMBOL}. They never mix. {TOKEN_SYMBOL} never pays rent and never
+            changes house cost. Every send takes 5%: 40% vault · 25% ops · 20% community · 15% burn. Holding{" "}
+            {TOKEN_SYMBOL} earns nothing until deeds exist and drip runs. Drip skips if the vault is under 10{" "}
+            {TOKEN_SYMBOL}.
+          </p>
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Fact k="Supply" v={snap ? microToStx(snap.sitzSupply) : "—"} />
+            <Fact k="Vault" v={snap ? microToStx(snap.sitzVault) : "—"} />
+            <Fact k={`Ops ${TOKEN_SYMBOL}`} v={snap ? microToStx(snap.sitzOps) : "—"} />
+            <Fact k="Community" v={snap ? microToStx(snap.sitzCommunity) : "—"} />
+          </dl>
+          {isDeployer && (
+            <div className="mt-4 flex flex-wrap items-end gap-2">
+              <Button variant="secondary" onClick={() => void onGenesis()} disabled={!ready || Boolean(busy)}>
+                {busy === "genesis" ? "Confirm in wallet…" : "Genesis mint"}
+              </Button>
+              <label className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
+                Faucet to this wallet
+                <input
+                  className="mt-1 h-10 w-28 rounded-[var(--radius-sm)] border border-border bg-bg px-3 text-sm text-fg"
+                  inputMode="numeric"
+                  value={faucetAmt}
+                  onChange={(e) => setFaucetAmt(e.target.value.replace(/[^\d]/g, "").slice(0, 5))}
+                />
+              </label>
+              <Button variant="secondary" onClick={() => void onFaucet()} disabled={!ready || Boolean(busy)}>
+                {busy === "faucet" ? "Confirm in wallet…" : `Faucet ${faucetAmt || "0"} ${TOKEN_SYMBOL}`}
+              </Button>
+            </div>
+          )}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex-1 text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
+              Send to (ST…)
+              <input
+                className="mt-1 h-10 w-full rounded-[var(--radius-sm)] border border-border bg-bg px-3 font-mono text-xs text-fg"
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value.trim())}
+                placeholder="ST…"
+              />
+            </label>
+            <label className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
+              Amount
+              <input
+                className="mt-1 h-10 w-28 rounded-[var(--radius-sm)] border border-border bg-bg px-3 text-sm text-fg"
+                inputMode="numeric"
+                value={sendAmt}
+                onChange={(e) => setSendAmt(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
+              />
+            </label>
+            <Button
+              variant="secondary"
+              onClick={() => void onSendSitz()}
+              disabled={!wallet || !ready || sitzBal === 0n || Boolean(busy)}
+            >
+              {busy === "sitz" ? "Confirm in wallet…" : `Send · 5% tax`}
+            </Button>
+          </div>
+          <p className="mt-3 text-[11px] text-fg-subtle">
+            Last drip epoch {snap ? snap.lastDripEpoch : "—"}. Drip pays deed owners by houses (1/3/6/10/16/25). Unowned
+            lots get 0. The live city from Phase 5 has no drip-sitz yet — Send still fills the vault.
+          </p>
+          <Button
+            className="mt-3"
+            variant="primary"
+            onClick={() => void onDrip()}
+            disabled={!wallet || !ready || !vaultReady || (snap?.epoch ?? 0) < 1 || Boolean(busy)}
+          >
+            {busy === "drip" ? "Confirm in wallet…" : `Drip vault to deeds`}
+          </Button>
         </section>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem]">

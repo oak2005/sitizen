@@ -11,8 +11,11 @@ const CITY_FNS = new Set([
   "close-epoch",
   "settle",
   "pay-rent",
+  "open-district",
+  "drip-sitz",
 ]);
 const DEED_FNS = new Set(["improve"]);
+const TOKEN_FNS = new Set(["faucet", "genesis", "transfer"]);
 
 export type WalletSession = {
   address: string;
@@ -78,7 +81,7 @@ export async function callCity(opts: {
     throw new Error("Wallet is not a testnet address.");
   }
   const name = opts.contract.split(".")[1] ?? "";
-  const allowed = name === "sz-deed" ? DEED_FNS : CITY_FNS;
+  const allowed = name === "sz-deed" ? DEED_FNS : name === "circuit-token" ? TOKEN_FNS : CITY_FNS;
   if (!allowed.has(opts.functionName)) {
     throw new Error("That function is not callable from this page.");
   }
@@ -108,5 +111,24 @@ export function stxSendEq(address: string, amount: bigint): PostCondition {
     address,
     condition: "eq",
     amount: amount.toString(),
+  } as PostCondition;
+}
+
+export function ftSendEq(address: string, amount: bigint, asset: string): PostCondition {
+  if (!isTestnetAddress(address)) {
+    throw new Error("Post-condition address must be testnet.");
+  }
+  if (amount <= 0n) {
+    throw new Error("Post-condition amount must be positive.");
+  }
+  if (!asset.includes("::")) {
+    throw new Error("FT asset id must look like ST….circuit-token::sitz.");
+  }
+  return {
+    type: "ft-postcondition",
+    address,
+    condition: "eq",
+    amount: amount.toString(),
+    asset,
   } as PostCondition;
 }

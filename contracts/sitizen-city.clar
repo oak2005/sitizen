@@ -243,6 +243,14 @@
   )
 )
 
+;; Pays the SITZ yield vault to deed owners. Civic tax stays STX. Anyone may poke this after epoch 1.
+(define-public (drip-sitz)
+  (begin
+    (asserts! (> (var-get epoch) u0) ERR-TOO-EARLY)
+    (contract-call? .circuit-token drip (var-get epoch))
+  )
+)
+
 ;; Record a landing after close (move step). Once per seat per epoch.
 (define-public (land (space uint))
   (begin

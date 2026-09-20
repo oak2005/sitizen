@@ -68,21 +68,30 @@ export type CitySnapshot = {
   opsStx: bigint;
   communityStx: bigint;
   sitzVault: bigint;
+  sitzOps: bigint;
+  sitzCommunity: bigint;
+  sitzSupply: bigint;
+  lastDripEpoch: number;
   network: typeof STACKS_NETWORK;
 };
 
 export async function loadCitySnapshot(): Promise<CitySnapshot> {
-  const [humans, districts, loop, epoch, epochOpen, epochLength, opsStx, communityStx, sitzVault] = await Promise.all([
-    callRead(CONTRACTS.city, "human-count"),
-    callRead(CONTRACTS.city, "district-count"),
-    callRead(CONTRACTS.city, "loop-size"),
-    callRead(CONTRACTS.city, "get-epoch"),
-    callRead(CONTRACTS.city, "is-epoch-open"),
-    callRead(CONTRACTS.city, "get-epoch-length"),
-    callRead(CONTRACTS.treasury, "ops-balance"),
-    callRead(CONTRACTS.treasury, "community-balance"),
-    callRead(CONTRACTS.token, "get-yield-vault"),
-  ]);
+  const [humans, districts, loop, epoch, epochOpen, epochLength, opsStx, communityStx, sitzVault, sitzOps, sitzCommunity, sitzSupply, lastDrip] =
+    await Promise.all([
+      callRead(CONTRACTS.city, "human-count"),
+      callRead(CONTRACTS.city, "district-count"),
+      callRead(CONTRACTS.city, "loop-size"),
+      callRead(CONTRACTS.city, "get-epoch"),
+      callRead(CONTRACTS.city, "is-epoch-open"),
+      callRead(CONTRACTS.city, "get-epoch-length"),
+      callRead(CONTRACTS.treasury, "ops-balance"),
+      callRead(CONTRACTS.treasury, "community-balance"),
+      callRead(CONTRACTS.token, "get-yield-vault"),
+      callRead(CONTRACTS.token, "get-ops-sitz"),
+      callRead(CONTRACTS.token, "get-community-sitz"),
+      callRead(CONTRACTS.token, "get-total-supply"),
+      callRead(CONTRACTS.token, "get-last-drip-epoch"),
+    ]);
   return {
     humans: Number(asBig(humans)),
     districts: Number(asBig(districts)),
@@ -93,6 +102,10 @@ export async function loadCitySnapshot(): Promise<CitySnapshot> {
     opsStx: asBig(opsStx),
     communityStx: asBig(communityStx),
     sitzVault: asBig(sitzVault),
+    sitzOps: asBig(sitzOps),
+    sitzCommunity: asBig(sitzCommunity),
+    sitzSupply: asBig(sitzSupply),
+    lastDripEpoch: Number(asBig(lastDrip)),
     network: STACKS_NETWORK,
   };
 }
@@ -115,6 +128,10 @@ export async function loadSeat(address: string): Promise<{
     lastLanded = { space: Number(asBig(row.space)), epoch: Number(asBig(row.epoch)) };
   }
   return { human: Boolean(human), lastLanded, lien: asBig(lien), jailed: Boolean(jailed) };
+}
+
+export async function loadSitzBalance(who: string): Promise<bigint> {
+  return asBig(await callRead(CONTRACTS.token, "get-balance", [Cl.principal(who)]));
 }
 
 export async function loadDeed(id: number): Promise<{ owner: string | null; houses: number; cost: bigint }> {

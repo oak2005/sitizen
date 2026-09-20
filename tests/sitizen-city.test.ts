@@ -36,6 +36,9 @@ beforeEach(async () => {
       deployer,
     ).result,
   ).toBeOk(Cl.bool(true));
+  expect(
+    simnet.callPublicFn("circuit-token", "set-city-contract", [city], deployer).result,
+  ).toBeOk(Cl.bool(true));
 });
 
 function join(who: string) {
@@ -161,5 +164,16 @@ describe("sitizen-city", () => {
     );
     expect(simnet.callPublicFn("sitizen-city", "close-epoch", [], alice).result).toBeOk(Cl.uint(1));
     expect(simnet.callReadOnlyFn("sitizen-city", "is-epoch-open", [], deployer).result).toBeBool(false);
+  });
+
+  it("drip-sitz after epoch 1 skips when the vault is empty", () => {
+    const alice = humans[0]!;
+    join(alice);
+    expect(simnet.callPublicFn("sitizen-city", "open-epoch", [], alice).result).toBeOk(Cl.uint(1));
+    const drip = simnet.callPublicFn("sitizen-city", "drip-sitz", [], alice);
+    expect(drip.result).toBeOk(
+      Cl.tuple({ skipped: Cl.bool(true), paid: Cl.uint(0), "total-weight": Cl.uint(0) }),
+    );
+    expect(simnet.callPublicFn("sitizen-city", "drip-sitz", [], alice).result).toBeErr(Cl.uint(308));
   });
 });

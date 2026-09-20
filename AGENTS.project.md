@@ -38,3 +38,4 @@ Phase 3: `contracts/sz-deed.clar` SIP-009, houses 0-5, no impl-trait on testnet.
 Phase 4: `contracts/circuit-token.clar` SITZ SIP-010. Civic tax = STX. Token tax = SITZ. Never mixed.
 Phase 5: `contracts/sitizen-city.clar` — 50 STX join, 8 humans per district, epoch close ignores bots.
 Phase 7: Live City epoch UI — open, commit-intent, close, land (2d6), settle, claim next epoch, rent STX skim. Same testnet contracts.
+Phase 8: SITZ genesis/faucet/send (5% tax). drip-sitz on city for the next publish; live v1 city has no drip-sitz function.

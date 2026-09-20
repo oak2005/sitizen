@@ -67,6 +67,21 @@ export function explorerAddr(addr: string): string {
   return `https://explorer.hiro.so/address/${addr}?chain=testnet`;
 }
 
+export const SITZ_UNIT = 1_000_000n;
+export const SITZ_YIELD_MIN = 10n;
+
+export function deployerAddress(): string {
+  return splitContract(CONTRACTS.token)?.address ?? splitContract(CONTRACTS.city)?.address ?? "";
+}
+
+export function sitzAsset(): string {
+  return `${CONTRACTS.token}::sitz`;
+}
+
+export function sitzToMicro(n: number): bigint {
+  return BigInt(Math.trunc(n)) * SITZ_UNIT;
+}
+
 export function nextUnlockAt(humans: number): number | null {
   for (const gate of DISTRICT_GATES) {
     if (humans < gate) return gate;
@@ -93,6 +108,13 @@ const CITY_ERR: Record<number, string> = {
   101: "Paused.",
   102: "Already seated.",
   103: "Only the city contract may do that.",
+  300: "Not the SITZ deployer.",
+  301: "Only the city may drip SITZ.",
+  304: "SITZ faucet is off on mainnet.",
+  305: "Genesis already ran.",
+  306: "Amount must be greater than zero.",
+  308: "SITZ already dripped this epoch.",
+  309: "Sender must be the wallet signing.",
   400: "Not the deployer.",
   401: "Not ops.",
   402: "City is paused.",
