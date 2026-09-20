@@ -37,4 +37,4 @@ Phase 2: `contracts/stx-treasury.clar` (join 50 STX, 60/40, amnesty from ops, co
 Phase 3: `contracts/sz-deed.clar` SIP-009, houses 0-5, no impl-trait on testnet.
 Phase 4: `contracts/circuit-token.clar` SITZ SIP-010. Civic tax = STX. Token tax = SITZ. Never mixed.
 Phase 5: `contracts/sitizen-city.clar` — 50 STX join, 8 humans per district, epoch close ignores bots.
-Phase 6: `/live` Leather/Xverse, join 50 STX post-conditions, env contract IDs. No seeds in git.
+Phase 7: Live City epoch UI — open, commit-intent, close, land (2d6), settle, claim next epoch, rent STX skim. Same testnet contracts.

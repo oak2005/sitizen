@@ -82,5 +82,35 @@ export function microToStx(u: bigint | number): string {
 
 export function publicError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  return raw.replace(/\b(mnemonic|private key|secret|seed phrase|24 words)\b/gi, "[redacted]").slice(0, 240);
+  const cleaned = raw.replace(/\b(mnemonic|private key|secret|seed phrase|24 words)\b/gi, "[redacted]");
+  const code = Number((cleaned.match(/\bu(\d{3})\b/) ?? cleaned.match(/err u(\d+)/i) ?? cleaned.match(/\((\d{3})\)/))?.[1] ?? NaN);
+  if (Number.isInteger(code) && CITY_ERR[code]) return CITY_ERR[code];
+  return cleaned.slice(0, 240);
 }
+
+const CITY_ERR: Record<number, string> = {
+  100: "Not the deployer.",
+  101: "Paused.",
+  102: "Already seated.",
+  103: "Only the city contract may do that.",
+  400: "Not the deployer.",
+  401: "Not ops.",
+  402: "City is paused.",
+  403: "You are not seated. Join first.",
+  404: "Already seated.",
+  405: "Epoch is still open. Close it first.",
+  406: "Epoch is closed. Open a new one, or commit while it is open.",
+  407: "Too early. Every seated human must commit, or wait 10 minutes.",
+  408: "You already committed this epoch.",
+  409: "Not enough humans for that district.",
+  410: "Wrong district number.",
+  411: "No last-landed lot to claim, or that space is off the board.",
+  412: "That lot is already owned.",
+  413: "You already landed this epoch.",
+  415: "Amount must be greater than zero.",
+  416: "Settle this epoch before opening the next.",
+  417: "Only a human seat can claim.",
+  418: "No lien to cut.",
+  419: "Could not unlock that district.",
+};
+

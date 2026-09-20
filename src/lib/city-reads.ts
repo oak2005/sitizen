@@ -64,6 +64,7 @@ export type CitySnapshot = {
   loop: number;
   epoch: number;
   epochOpen: boolean;
+  epochLength: number;
   opsStx: bigint;
   communityStx: bigint;
   sitzVault: bigint;
@@ -71,12 +72,13 @@ export type CitySnapshot = {
 };
 
 export async function loadCitySnapshot(): Promise<CitySnapshot> {
-  const [humans, districts, loop, epoch, epochOpen, opsStx, communityStx, sitzVault] = await Promise.all([
+  const [humans, districts, loop, epoch, epochOpen, epochLength, opsStx, communityStx, sitzVault] = await Promise.all([
     callRead(CONTRACTS.city, "human-count"),
     callRead(CONTRACTS.city, "district-count"),
     callRead(CONTRACTS.city, "loop-size"),
     callRead(CONTRACTS.city, "get-epoch"),
     callRead(CONTRACTS.city, "is-epoch-open"),
+    callRead(CONTRACTS.city, "get-epoch-length"),
     callRead(CONTRACTS.treasury, "ops-balance"),
     callRead(CONTRACTS.treasury, "community-balance"),
     callRead(CONTRACTS.token, "get-yield-vault"),
@@ -87,6 +89,7 @@ export async function loadCitySnapshot(): Promise<CitySnapshot> {
     loop: Number(asBig(loop)),
     epoch: Number(asBig(epoch)),
     epochOpen: Boolean(epochOpen),
+    epochLength: Number(asBig(epochLength)),
     opsStx: asBig(opsStx),
     communityStx: asBig(communityStx),
     sitzVault: asBig(sitzVault),
@@ -97,17 +100,21 @@ export async function loadCitySnapshot(): Promise<CitySnapshot> {
 export async function loadSeat(address: string): Promise<{
   human: boolean;
   lastLanded: { space: number; epoch: number } | null;
+  lien: bigint;
+  jailed: boolean;
 }> {
-  const [human, landed] = await Promise.all([
+  const [human, landed, lien, jailed] = await Promise.all([
     callRead(CONTRACTS.city, "is-human-seat", [Cl.principal(address)]),
     callRead(CONTRACTS.city, "get-last-landed", [Cl.principal(address)]),
+    callRead(CONTRACTS.city, "get-lien", [Cl.principal(address)]),
+    callRead(CONTRACTS.city, "is-jailed", [Cl.principal(address)]),
   ]);
   let lastLanded: { space: number; epoch: number } | null = null;
   if (landed && typeof landed === "object") {
     const row = landed as { space?: unknown; epoch?: unknown };
     lastLanded = { space: Number(asBig(row.space)), epoch: Number(asBig(row.epoch)) };
   }
-  return { human: Boolean(human), lastLanded };
+  return { human: Boolean(human), lastLanded, lien: asBig(lien), jailed: Boolean(jailed) };
 }
 
 export async function loadDeed(id: number): Promise<{ owner: string | null; houses: number; cost: bigint }> {

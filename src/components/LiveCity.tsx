@@ -7,6 +7,7 @@ import { NetworkBadge } from "@/components/NetworkBadge";
 import { Button } from "@/components/ui/button";
 import { isPurchasable, spaceAt, SPACES } from "@/game/board";
 import { LIVE_JOIN_STX } from "@/game/epoch/types";
+import { liveRentStx } from "@/lib/live-rent";
 import {
   APP_NAME,
   CONTRACTS,
@@ -31,6 +32,8 @@ import {
   type WalletSession,
 } from "@/lib/stacks-wallet";
 
+type Roll = { a: number; b: number; dest: number };
+
 export function LiveCity() {
   const ready = contractsReady();
   const [wallet, setWallet] = useState<WalletSession | null>(null);
@@ -40,10 +43,17 @@ export function LiveCity() {
   const [snap, setSnap] = useState<CitySnapshot | null>(null);
   const [human, setHuman] = useState(false);
   const [lastLanded, setLastLanded] = useState<{ space: number; epoch: number } | null>(null);
+  const [lien, setLien] = useState(0n);
+  const [jailed, setJailed] = useState(false);
   const [selected, setSelected] = useState<number | null>(1);
   const [deed, setDeed] = useState<{ owner: string | null; houses: number; cost: bigint } | null>(null);
   const [owners, setOwners] = useState<Map<number, { owner: string | null; houses: number }>>(new Map());
   const [saleStx, setSaleStx] = useState("200");
+  const [wantClaim, setWantClaim] = useState(true);
+  const [wantBuild, setWantBuild] = useState(false);
+  const [committedEpoch, setCommittedEpoch] = useState<number | null>(null);
+  const [landedEpoch, setLandedEpoch] = useState<number | null>(null);
+  const [roll, setRoll] = useState<Roll | null>(null);
 
   const refresh = useCallback(async (address?: string) => {
     if (!ready) return;
@@ -55,6 +65,8 @@ export function LiveCity() {
       const seat = await loadSeat(address);
       setHuman(seat.human);
       setLastLanded(seat.lastLanded);
+      setLien(seat.lien);
+      setJailed(seat.jailed);
     }
   }, [ready]);
 
@@ -115,48 +127,83 @@ export function LiveCity() {
     setWallet(null);
     setHuman(false);
     setLastLanded(null);
+    setLien(0n);
+    setJailed(false);
+  }
+
+  async function callFn(label: string, functionName: string, functionArgs: Parameters<typeof callCity>[0]["functionArgs"], postConditions: Parameters<typeof callCity>[0]["postConditions"] = []) {
+    if (!wallet) return;
+    await run(label, async () => {
+      const { txid: id } = await callCity({
+        contract: functionName === "improve" ? CONTRACTS.deed : CONTRACTS.city,
+        functionName,
+        functionArgs,
+        address: wallet.address,
+        postConditions,
+      });
+      return id;
+    });
   }
 
   async function onJoin() {
     if (!wallet) return;
-    await run("join", async () => {
-      const { txid: id } = await callCity({
-        contract: CONTRACTS.city,
-        functionName: "join",
-        functionArgs: [],
-        address: wallet.address,
-        postConditions: [stxSendEq(wallet.address, LIVE_JOIN_USTX)],
-      });
-      return id;
-    });
+    await callFn("join", "join", [], [stxSendEq(wallet.address, LIVE_JOIN_USTX)]);
+  }
+
+  async function onOpen() {
+    await callFn("open", "open-epoch", []);
+  }
+
+  async function onCommit() {
+    const build = wantBuild && selected != null ? Cl.some(Cl.uint(selected)) : Cl.none();
+    await callFn("commit", "commit-intent", [Cl.bool(wantClaim), build]);
+    if (ready) {
+      const city = await loadCitySnapshot();
+      setCommittedEpoch(city.epoch);
+    }
+  }
+
+  async function onClose() {
+    await callFn("close", "close-epoch", []);
+  }
+
+  async function onSettle() {
+    await callFn("settle", "settle", []);
+  }
+
+  function onRoll() {
+    const loop = snap?.loop ?? 40;
+    const from = lastLanded?.space ?? 0;
+    const buf = new Uint8Array(2);
+    crypto.getRandomValues(buf);
+    const a = (buf[0]! % 6) + 1;
+    const b = (buf[1]! % 6) + 1;
+    const dest = (from + a + b) % loop;
+    setRoll({ a, b, dest });
+    setSelected(dest);
+  }
+
+  async function onLand() {
+    if (!snap) return;
+    const dest = roll?.dest ?? selected ?? 0;
+    if (!Number.isInteger(dest) || dest < 0 || dest >= snap.loop) {
+      setError("Roll first, then land on that space.");
+      return;
+    }
+    await callFn("land", "land", [Cl.uint(dest)]);
+    if (ready) {
+      const city = await loadCitySnapshot();
+      setLandedEpoch(city.epoch);
+    }
   }
 
   async function onClaim() {
-    if (!wallet) return;
-    await run("claim", async () => {
-      const { txid: id } = await callCity({
-        contract: CONTRACTS.city,
-        functionName: "claim",
-        functionArgs: [],
-        address: wallet.address,
-        postConditions: [],
-      });
-      return id;
-    });
+    await callFn("claim", "claim", []);
   }
 
   async function onImprove() {
     if (!wallet || selected == null || !deed) return;
-    await run("improve", async () => {
-      const { txid: id } = await callCity({
-        contract: CONTRACTS.deed,
-        functionName: "improve",
-        functionArgs: [Cl.uint(selected)],
-        address: wallet.address,
-        postConditions: [stxSendEq(wallet.address, deed.cost)],
-      });
-      return id;
-    });
+    await callFn("improve", "improve", [Cl.uint(selected)], [stxSendEq(wallet.address, deed.cost)]);
   }
 
   async function onList() {
@@ -168,21 +215,59 @@ export function LiveCity() {
     }
     const micro = BigInt(stx) * 1_000_000n;
     const fee = (micro * 25n) / 1000n;
-    await run("list", async () => {
-      const { txid: id } = await callCity({
-        contract: CONTRACTS.city,
-        functionName: "pay-listing-fee",
-        functionArgs: [Cl.uint(micro)],
-        address: wallet.address,
-        postConditions: [stxSendEq(wallet.address, fee)],
-      });
-      return id;
+    await callFn("list", "pay-listing-fee", [Cl.uint(micro)], [stxSendEq(wallet.address, fee)]);
+  }
+
+  async function onPayRent() {
+    if (!wallet || !deed?.owner || selected == null || !snap) return;
+    const dice = roll ? roll.a + roll.b : 7;
+    const stx = liveRentStx({
+      spaceId: selected,
+      houses: deed.houses,
+      owner: deed.owner,
+      owners,
+      loop: snap.loop,
+      dice,
     });
+    if (stx <= 0) {
+      setError("No rent due on that lot.");
+      return;
+    }
+    const micro = BigInt(stx) * 1_000_000n;
+    await callFn("rent", "pay-rent", [Cl.principal(deed.owner), Cl.uint(micro)], [stxSendEq(wallet.address, micro)]);
+  }
+
+  async function onDistrict() {
+    if (!snap) return;
+    await callFn("district", "open-district", [Cl.uint(snap.districts + 1)]);
   }
 
   const unlock = snap ? nextUnlockAt(snap.humans) : 8;
   const selectedSpace = selected != null ? spaceAt(selected) : null;
   const mine = Boolean(wallet && deed?.owner === wallet.address);
+  const epochOpen = Boolean(snap?.epochOpen);
+  const epoch = snap?.epoch ?? 0;
+  const canClaim = Boolean(human && lastLanded && epoch > lastLanded.epoch);
+  const canClose = epochOpen;
+  const canCommit = epochOpen && human && committedEpoch !== epoch;
+  const canLand = Boolean(human && !epochOpen && epoch > 0 && landedEpoch !== epoch);
+  const canSettle = Boolean(!epochOpen && epoch > 0);
+  const canOpen = !epochOpen;
+  const nextDistrict = (snap?.districts ?? 0) + 1;
+  const canDistrict = Boolean(snap && snap.humans >= nextDistrict * 8);
+  const landedOwner = selected != null ? owners.get(selected)?.owner : null;
+  const rentDue =
+    wallet && landedOwner && landedOwner !== wallet.address && selected != null && snap
+      ? liveRentStx({
+          spaceId: selected,
+          houses: owners.get(selected)?.houses ?? 0,
+          owner: landedOwner,
+          owners,
+          loop: snap.loop,
+          dice: roll ? roll.a + roll.b : 7,
+        })
+      : 0;
+  const mins = snap ? Math.max(1, Math.round(snap.epochLength / 60)) : 10;
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
@@ -204,8 +289,8 @@ export function LiveCity() {
         <p className="text-[11px] tracking-[0.22em] text-fg-subtle uppercase">Live City · Stacks testnet</p>
         <h1 className="mt-3 font-display text-4xl font-medium tracking-tight sm:text-5xl">{APP_NAME}</h1>
         <p className="mt-3 max-w-xl text-base text-fg-muted">
-          You sit. The city keeps. Sign in by connecting Leather or Xverse. Join is {LIVE_JOIN_STX} STX. Deeds are{" "}
-          {DEED_PREFIX}-XX. Token is {TOKEN_SYMBOL}. This browser never sees your 24 words.
+          Sign in with Leather or Xverse. Join is {LIVE_JOIN_STX} STX. Then run an epoch: Open → Commit → Close → Land →
+          Settle. Claim unowned land the following epoch.
         </p>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -235,8 +320,7 @@ export function LiveCity() {
 
         {!ready && (
           <p className="mt-4 max-w-xl text-sm text-warn">
-            Contracts are not wired yet. After you deploy on testnet, put the four ST… contract IDs in Vercel env (never
-            a seed). Until then you can still connect a wallet.
+            Contracts are not wired in this preview. On Vercel, set the four ST… IDs in env.
           </p>
         )}
         {error && <p className="mt-4 max-w-xl text-sm text-bad">{error}</p>}
@@ -255,10 +339,75 @@ export function LiveCity() {
           <Fact k="STX ops" v={snap ? `${microToStx(snap.opsStx)} STX` : "—"} />
           <Fact k="STX community" v={snap ? `${microToStx(snap.communityStx)} STX` : "—"} />
           <Fact k={`${TOKEN_SYMBOL} vault`} v={snap ? microToStx(snap.sitzVault) : "—"} />
-          <Fact k="Epoch" v={snap ? `${snap.epoch}${snap.epochOpen ? " · open" : ""}` : "—"} />
-          <Fact k="Loop" v={snap ? `${snap.loop} spaces` : "Founders Square 40"} />
-          <Fact k="Your seat" v={human ? "Signed in · seated" : wallet ? "Signed in · not seated" : "Connect wallet"} />
+          <Fact k="Epoch" v={snap ? `${snap.epoch}${snap.epochOpen ? " · open" : snap.epoch ? " · closed" : " · none"}` : "—"} />
+          <Fact k="Your seat" v={human ? (jailed ? "Seated · lien" : "Seated") : wallet ? "Not seated" : "Connect"} />
+          <Fact k="Last landed" v={lastLanded ? `${deedId(lastLanded.space)} · ep ${lastLanded.epoch}` : "—"} />
         </dl>
+        {lien > 0n && (
+          <p className="mt-3 text-sm text-warn">
+            Lien {microToStx(lien)} STX{jailed ? " · in civic hold" : ""}
+          </p>
+        )}
+
+        <section className="mt-8 rounded-[var(--radius-md)] border border-border bg-bg-elevated p-4 sm:p-5">
+          <p className="text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Epoch</p>
+          <p className="mt-2 max-w-2xl text-sm text-fg-muted">
+            Testnet window is {mins} minutes, or sooner once every seated human has committed. One human can close right
+            after their own commit. Bots cannot block close. Dice is rolled here; the chain records the space you land.
+          </p>
+          <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <li>
+              <Button className="w-full" variant="secondary" onClick={() => void onOpen()} disabled={!wallet || !ready || !canOpen || Boolean(busy)}>
+                {busy === "open" ? "Confirm in wallet…" : "1. Open epoch"}
+              </Button>
+            </li>
+            <li>
+              <Button className="w-full" variant="secondary" onClick={() => void onCommit()} disabled={!wallet || !ready || !canCommit || Boolean(busy)}>
+                {busy === "commit" ? "Confirm in wallet…" : committedEpoch === epoch && epochOpen ? "Committed" : "2. Commit"}
+              </Button>
+            </li>
+            <li>
+              <Button className="w-full" variant="secondary" onClick={() => void onClose()} disabled={!wallet || !ready || !canClose || Boolean(busy)}>
+                {busy === "close" ? "Confirm in wallet…" : "3. Close epoch"}
+              </Button>
+            </li>
+            <li>
+              <Button className="w-full" variant="secondary" onClick={onRoll} disabled={!canLand || Boolean(busy)}>
+                {roll ? `Rolled ${roll.a}+${roll.b} → ${spaceAt(roll.dest)?.short ?? roll.dest}` : "4a. Roll 2d6"}
+              </Button>
+            </li>
+            <li>
+              <Button className="w-full" variant="go" onClick={() => void onLand()} disabled={!wallet || !ready || !canLand || !roll || Boolean(busy)}>
+                {busy === "land" ? "Confirm in wallet…" : roll ? `4b. Land ${deedId(roll.dest)}` : "4b. Land"}
+              </Button>
+            </li>
+            <li>
+              <Button className="w-full" variant="secondary" onClick={() => void onSettle()} disabled={!wallet || !ready || !canSettle || Boolean(busy)}>
+                {busy === "settle" ? "Confirm in wallet…" : "5. Settle"}
+              </Button>
+            </li>
+          </ol>
+          <div className="mt-4 flex flex-col gap-2 text-sm text-fg-muted">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={wantClaim} onChange={(e) => setWantClaim(e.target.checked)} />
+              Commit: claim last-landed next epoch if still unowned
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={wantBuild}
+                onChange={(e) => setWantBuild(e.target.checked)}
+                disabled={!mine}
+              />
+              Commit: improve the selected deed (you must own a full colour row)
+            </label>
+          </div>
+          {canDistrict && (
+            <Button className="mt-4" variant="primary" onClick={() => void onDistrict()} disabled={!wallet || !ready || Boolean(busy)}>
+              {busy === "district" ? "Confirm in wallet…" : `Open district ${nextDistrict} (4 lots)`}
+            </Button>
+          )}
+        </section>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem]">
           <section>
@@ -268,6 +417,7 @@ export function LiveCity() {
                 const rec = owners.get(space.id);
                 const label = deedId(space.id);
                 const active = selected === space.id;
+                const here = lastLanded?.space === space.id;
                 return (
                   <button
                     key={space.id}
@@ -277,7 +427,10 @@ export function LiveCity() {
                       active ? "border-fg/50 bg-bg-subtle" : "border-border bg-bg-elevated"
                     }`}
                   >
-                    <span className="block font-mono text-[11px] text-fg-subtle">{label}</span>
+                    <span className="block font-mono text-[11px] text-fg-subtle">
+                      {label}
+                      {here ? " · here" : ""}
+                    </span>
                     <span className="block text-sm text-fg">{space.short}</span>
                     <span className="block text-[11px] text-fg-muted">
                       {rec?.owner ? `${rec.houses} house${rec.houses === 1 ? "" : "s"} · ${shortAddr(rec.owner)}` : "unowned"}
@@ -298,13 +451,8 @@ export function LiveCity() {
                   {deed?.owner ? `Owner ${shortAddr(deed.owner)}` : "Unowned"}
                   {deed ? ` · houses ${deed.houses}` : ""}
                 </p>
-                {lastLanded && (
-                  <p className="mt-2 text-xs text-fg-subtle">
-                    Last landed {deedId(lastLanded.space)} epoch {lastLanded.epoch}
-                  </p>
-                )}
                 <div className="mt-4 flex flex-col gap-2">
-                  <Button variant="secondary" onClick={() => void onClaim()} disabled={!wallet || !human || Boolean(busy)}>
+                  <Button variant="secondary" onClick={() => void onClaim()} disabled={!wallet || !canClaim || Boolean(busy)}>
                     {busy === "claim" ? "Confirm in wallet…" : "Claim last-landed"}
                   </Button>
                   <Button
@@ -316,6 +464,11 @@ export function LiveCity() {
                       ? "Confirm in wallet…"
                       : `Improve · ${deed ? microToStx(deed.cost) : "—"} STX`}
                   </Button>
+                  {rentDue > 0 && (
+                    <Button variant="danger" onClick={() => void onPayRent()} disabled={!wallet || !human || Boolean(busy)}>
+                      {busy === "rent" ? "Confirm in wallet…" : `Pay rent · ${rentDue} STX`}
+                    </Button>
+                  )}
                   <label className="mt-2 text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
                     List sale (STX)
                     <input
@@ -330,8 +483,8 @@ export function LiveCity() {
                   </Button>
                 </div>
                 <p className="mt-3 text-[11px] text-fg-subtle">
-                  Sign-in is the wallet. Join sends exactly {LIVE_JOIN_STX} STX (deny-mode post-condition). Civic tax is
-                  STX. {TOKEN_SYMBOL} never pays rent.
+                  Claim only works the epoch after you land, and only if the lot is still unowned. Rent is STX (5% civic
+                  skim). {TOKEN_SYMBOL} never pays rent.
                 </p>
               </>
             )}

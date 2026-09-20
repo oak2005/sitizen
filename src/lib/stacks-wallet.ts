@@ -10,7 +10,7 @@ const CITY_FNS = new Set([
   "open-epoch",
   "close-epoch",
   "settle",
-  "open-district",
+  "pay-rent",
 ]);
 const DEED_FNS = new Set(["improve"]);
 
